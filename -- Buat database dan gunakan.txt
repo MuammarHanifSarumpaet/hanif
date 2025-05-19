@@ -1,0 +1,112 @@
+-- Buat database dan gunakan
+CREATE DATABASE BANKS;
+USE BANKS;
+
+-- Buat tabel USERS
+CREATE TABLE USERS (
+    ID INT PRIMARY KEY,
+    USERNAME VARCHAR(50) NOT NULL,
+    EMAIL VARCHAR(50)
+);
+
+-- Transaksi 1: Insert, update, commit
+START TRANSACTION;
+
+INSERT INTO USERS (ID, USERNAME) VALUES (1, 'andi');
+UPDATE USERS SET EMAIL = 'andi@example.com' WHERE ID = 1;
+SELECT * FROM USERS;
+
+COMMIT;
+
+-- Transaksi 2: Update tapi rollback
+START TRANSACTION;
+
+UPDATE USERS SET EMAIL = 'wati@example.com' WHERE ID = 2;
+
+ROLLBACK;
+
+-- Optional: matikan autocommit (jika kamu ingin kendali manual)
+SET autocommit = 0;
+
+-- Transaksi 3: Insert lagi dengan commit
+START TRANSACTION;
+
+INSERT INTO USERS (ID, USERNAME) VALUES (2, 'tina');
+UPDATE USERS SET EMAIL = 'tina@example.com' WHERE ID = 2;
+SELECT * FROM USERS;
+
+COMMIT;
+
+-- Buat tabel Accounts dan Transactions
+CREATE TABLE Accounts (
+    account_id INT AUTO_INCREMENT PRIMARY KEY,
+    account_holder VARCHAR(50) NOT NULL,
+    balance DECIMAL(10,2) NOT NULL
+);
+
+CREATE TABLE Transactions (
+    transaction_id INT AUTO_INCREMENT PRIMARY KEY,
+    account_id INT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    transaction_type ENUM('DEPOSIT', 'WITHDRAW') NOT NULL,
+    FOREIGN KEY (account_id) REFERENCES Accounts(account_id)
+);
+
+-- 
+
+INSERT INTO accounts(account_holder, balance)
+VALUES
+    ('andi', 1000000.00),
+    ('wati', 500000.00);
+
+-- 
+
+DELIMITER //
+
+CREATE PROCEDURE transfer (
+    IN sender_id INT,
+    IN receiver_id INT,
+    IN amount DECIMAL(10,2)
+)
+BEGIN
+    DECLARE rollback_message VARCHAR(255) DEFAULT 'Transaction rolled back: dana tidak cukup';
+    DECLARE commit_message VARCHAR(255) DEFAULT 'Transaction committed successfully';
+    DECLARE sender_balance DECIMAL(10,2);
+
+    START TRANSACTION;
+
+    -- Ambil saldo pengirim
+    SELECT balance INTO sender_balance
+    FROM accounts
+    WHERE account_id = sender_id;
+
+    -- Periksa apakah saldo cukup
+    IF sender_balance < amount THEN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = rollback_message;
+    ELSE
+        -- Kurangi saldo pengirim
+        UPDATE accounts
+        SET balance = balance - amount
+        WHERE account_id = sender_id;
+
+        -- Tambahkan saldo ke penerima
+        UPDATE accounts
+        SET balance = balance + amount
+        WHERE account_id = receiver_id;
+
+        -- Catat transaksi ke tabel Transactions
+        INSERT INTO transactions(account_id, amount, transaction_type)
+        VALUES (sender_id, -amount, 'WITHDRAW');
+
+        INSERT INTO transactions(account_id, amount, transaction_type)
+        VALUES (receiver_id, amount, 'DEPOSIT');
+
+        COMMIT;
+
+        SELECT commit_message AS 'result';
+    END IF;
+END //
+
+DELIMITER ;
